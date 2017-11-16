@@ -19,7 +19,7 @@ struct SequenceDetails
 	int32_t  rds                  = INVALID_RDS; //running digital sum at the end of the sequence
 	bool     has_odd_num_of_ones  = false;
 	uint32_t sum_of_nrzi_squares  = 0;
-	int32_t sum_per_bit_rds      = 0;
+	int32_t  sum_per_bit_rds      = 0;
 
 	SequenceDetails() = default;
 	SequenceDetails(int rll_sequence, int length);

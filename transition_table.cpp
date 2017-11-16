@@ -26,65 +26,6 @@ static uint32_t super_state_with_rds(uint32_t rds, uint32_t state8, uint32_t sig
 	return (rds * NUM_OF_STATE_NTZ_COMBINATIONS + state8) * NUM_SIGNS + sign_bit;
 }
 
-static double get_total_codebook_variance(const STATS<double> & stats);
-static void normalise_variance(STATS<double> & stats);
-
-//--------------------------------------------------------------------------
-
-
-template<typename T, size_t N>
-void matrix_vector_multiplication(const std::array< std::array<T, N>, N> & A, const std::vector<double> & x, std::vector<double> & dest)
-{
-	assert(N == x.size());
-	for (size_t i = 0; i < A.size(); i++)
-	{
-		auto row = A[i];
-		dest[i] = std::inner_product(row.begin(), row.end(), x.begin(), 0.0);
-	}
-}
-
-//--------------------------------------------------------------------------
-
-template<typename T, size_t N>
-void solve_iterative(std::vector<double> & p, std::vector<double> & b, const std::array< std::array<T, N>, N> & transition, double eps)
-{
-	fprintf(stderr, "solve iterative\n");
-
-	double sum, sum2, temp, dist;
-	std::vector<double> & ptr1 = p;
-	std::vector<double> & ptr2 = b;
-	std::vector<double> & ptr3 = p;
-	
-	dist = sum2 = 1.0;  
-	for (uint32_t iter = 100; dist/sum2 >= eps && iter > 0; iter--)
-	{
-		ptr3 = ptr1;
-		ptr1 = ptr2;
-		ptr2 = ptr3;
-		
-		matrix_vector_multiplication(transition, ptr1, ptr2);
-		sum = 0.0;
-		for (size_t i = 0; i < b.size(); i += 2 * NUM_OF_SUPER_STATES)
-		{
-			for (uint32_t j = i; j < i + NUM_OF_SUPER_STATES; j++)
-				sum += ptr2[j];
-		}
-		sum2 = 0.0;
-		dist = 0.0;
-		for (size_t i = 0; i < b.size(); i += 2 * NUM_OF_SUPER_STATES)
-		{
-			for (uint32_t j = i; j < i + NUM_OF_SUPER_STATES; j++)
-			{
-				ptr2[j] /= sum;
-				sum2 += ptr2[j] * ptr2[j];
-				temp = ptr2[j] - ptr1[j];
-				dist += temp*temp;
-			}
-		}
-	}
-	ptr1 = ptr2;
-}
-
 //--------------------------------------------------------------------------
 
 bool switch_is_allowed(int leading, int ntz, int d, int k)
@@ -94,7 +35,7 @@ bool switch_is_allowed(int leading, int ntz, int d, int k)
 
 //--------------------------------------------------------------------------
 
-bool new_wins_tie_breaker(const SUPER_STATE & new_st, const SUPER_STATE & min_st, const std::shared_ptr<STATS<double>> full_state_stats) 
+bool new_wins_tie_breaker(const SUPER_STATE & new_st, const SUPER_STATE & min_st, const Stats<TRANSITION_TABLE_STATES> & full_state_stats)
 {
 	int new_sign = (new_st.rds >= 0) ? new_st.sign : -new_st.sign;
 	int min_sign = (min_st.rds >= 0) ? min_st.sign : -min_st.sign;
@@ -102,10 +43,10 @@ bool new_wins_tie_breaker(const SUPER_STATE & new_st, const SUPER_STATE & min_st
 	uint32_t new_full_state = (CLIP_RDS(abs(new_st.rds)) * NUM_OF_STATE_NTZ_COMBINATIONS + (old2new[new_st.state][new_st.ntz])) * NUM_SIGNS + SIGN_TO_BIT(new_sign);
 	uint32_t min_full_state = (CLIP_RDS(abs(min_st.rds)) * NUM_OF_STATE_NTZ_COMBINATIONS + (old2new[min_st.state][min_st.ntz])) * NUM_SIGNS + SIGN_TO_BIT(min_sign);
 
-	return  full_state_stats->variance[new_full_state] < full_state_stats->variance[min_full_state];
+	return  full_state_stats.var[new_full_state] < full_state_stats.var[min_full_state];
 
-	return (full_state_stats->variance[new_full_state]/full_state_stats->probability[new_full_state]
-	        < full_state_stats->variance[min_full_state]/full_state_stats->probability[min_full_state]);
+	return (full_state_stats.var[new_full_state]/full_state_stats.prob[new_full_state]
+	        < full_state_stats.var[min_full_state]/full_state_stats.prob[min_full_state]);
 
 }
 
@@ -147,7 +88,7 @@ SUPER_STATE Codebook::get_best_between_main_and_alternate(int byte, const SUPER_
 			new_st.state = line[byte + table_offset][st.state].next_state;
 			//fprintf(stderr, "checking for draw\n");
 			if ( (new_st.sum_var_prediction < min_st.sum_var_prediction) ||
-			     ( (new_st.sum_var_prediction == min_st.sum_var_prediction) && new_wins_tie_breaker(new_st, min_st, this->global_full_state_stats) ) )
+			     ( (new_st.sum_var_prediction == min_st.sum_var_prediction) && new_wins_tie_breaker(new_st, min_st, transition.state_stats) ) )
 			{
 				min_st = new_st;
 			}
@@ -183,7 +124,7 @@ void Codebook::get_best_between_states_0_3(int byte, const SUPER_STATE & st, SUP
 				new_st.state = line[byte + table_offset][STATE_3 - st.state].next_state;
 
 				if ( (new_st.sum_var_prediction < min_st.sum_var_prediction) ||
-								 ( (new_st.sum_var_prediction == min_st.sum_var_prediction) && new_wins_tie_breaker(new_st, min_st, this->global_full_state_stats) ) )
+								 ( (new_st.sum_var_prediction == min_st.sum_var_prediction) && new_wins_tie_breaker(new_st, min_st, transition.state_stats) ) )
 				{
 					min_st = new_st;
 					min_st.state = line[byte + table_offset][STATE_3 - st.state].next_state;
@@ -238,6 +179,7 @@ bool Codebook::initialise_transition_table()
 					return false;
 				}
 				// state should be in [0,1039], when rds_max=64
+				double local_sum = 0.0;
 				for (uint16_t input = 0; input < NUM_INDICES; input++)
 				{
 					SUPER_STATE current_st(INVALID_SEQUENCE);
@@ -247,6 +189,8 @@ bool Codebook::initialise_transition_table()
 					current_st.sign = sign;
 
 					SUPER_STATE new_st = choose_next_super_state(input, current_st, switch_cnt);
+					local_sum += new_st.sum_var_actual;
+
 					//fprintf(stderr, "rds=%d, state8=%d, sign=%d, input=%d, new_sum_var=%d, min_rds=%d next_state=%d, 0x%04x\n",
 					//	rds, state8, sign, input, new_st.sum_var_actual, new_st.rds, new_st.state, new_st.codeword);
 					state_cnt[current_st.state]++;
@@ -254,11 +198,16 @@ bool Codebook::initialise_transition_table()
 						new_st.sign = -new_st.sign;
 
 					uint32_t new_state = (CLIP_RDS(abs(new_st.rds)) * NUM_OF_STATE_NTZ_COMBINATIONS + old2new[new_st.state][new_st.ntz]) * NUM_SIGNS + SIGN_TO_BIT(new_st.sign);
-					transition[new_state][start_from_state]++;
+					transition.matrix(new_state, start_from_state)++;
 				}
+
+				transition.state_stats.var[start_from_state] = local_sum / double(NUM_INDICES * SIZE_OF_ENCODED_OUTPUT_IN_BITS) ;
+
+
 			}
 		}
 	}
+
 	return true;
 }
 
@@ -266,11 +215,11 @@ bool Codebook::initialise_transition_table()
 
 void Codebook::print_transition_table()
 {
-	for (auto &row : transition)
+	for (size_t i = 0UL; i < transition.matrix.rows(); ++i)
 	{
-		for (auto &elem : row)
+		for (size_t j = 0UL; j<transition.matrix.columns(); ++j)
 		{
-			fprintf(stderr, "%2u ",elem);
+			fprintf(stderr, "%2u ", transition.matrix(i,j));
 		}
 		fprintf(stderr, "\n");
 	}
@@ -283,228 +232,175 @@ bool Codebook::calculate_pdf_with_transition_table()
    /* Calculation of the super-state (rds,ntz,sign,state) probabilities using transition table*/
    /* Calculation of the variance that the codebook would give if it was applied to a uniform file */
    /* where each 8-bits have the same probability (1/256) */
-	global_full_state_stats = std::make_shared<STATS<double>>(TRANSITION_TABLE_STATES);
 
 	// New attempt - 2 iterations
 	// in the second attempt the full_state_variances have been initialised and are used as tie breakers
 	for (int pdf_iter = 0; pdf_iter < 2; pdf_iter++)
 	{
-		double bit_var = collect_codebook_stats(global_full_state_stats->probability);
+		double bit_var = collect_codebook_stats();
 		fprintf(stderr, "!!!!!!Estimated Bit variance: %lf\n",bit_var);
-
-		//codeword_probability(RDS_MAX, p, d, k, state_stats.probability);
 	}
 	return true;
 }
 
 //--------------------------------------------------------------------------
 
-void Codebook::get_probability_vector(std::vector<double> &p)
+double Codebook::collect_codebook_stats()
 {
+	fprintf(stderr, "collect_codebook_stats\n");
 	initialise_transition_table();
+	transition.solve(1e-14);
+	double variance = transition.get_codebook_variance();
 
-	/* p,b - probability vectors*/
-	std::vector<double> b(TRANSITION_TABLE_STATES);
-	fprintf(stderr, "create vector b (%d)\n", TRANSITION_TABLE_STATES);
+	return variance;
+}
 
+//--------------------------------------------------------------------------
+
+TransitionTable::TransitionTable()
+{
+	printf("constructor called\n");
 	for (uint32_t i = 0; i <= RDS_MAX; i++)
 	{
 		for (uint32_t j = 0; j < NUM_OF_SUPER_STATES; j++)
 		{
-			b[i * NUM_OF_SUPER_STATES + j] = int(i == 0) / double(NUM_OF_SUPER_STATES);
+			state_stats.prob[i * NUM_OF_SUPER_STATES + j] = int(i == 0) / double(NUM_OF_SUPER_STATES);
 		}
 	}
-	solve_iterative<uint32_t, TRANSITION_TABLE_STATES>(p, b, transition, 1e-14);
 }
 
-double Codebook::collect_codebook_stats(std::vector<double> &p)
+bool TransitionTable::sanity_check()
 {
-	fprintf(stderr, "collect_codebook_stats\n");
-
-	get_probability_vector(p);
-
-	//check that the probabilities sum to 1
-	double prob_sum = std::accumulate(p.begin(), p.end(), 0.0);
-	std::cout << "SUM " << prob_sum << " should be 1" << std::endl;
-
-	double frequency[RDS_MAX + 1][NUM_SIGNS][NUM_EFMPLUS_STATES];
-	STATS <double> state_stats(NUM_EFMPLUS_STATES);
-	STATS_2D state_sign_stats(NUM_EFMPLUS_STATES, NUM_SIGNS);
-	STATS <double> sign_stats(NUM_SIGNS);
-	STATS_2D index_stats(NUM_INDICES, TRANSITION_TABLE_STATES);
-	STATS <double> rds_stats(RDS_MAX + 1);
-	int switch_cnt[4] = { 0 }; //0: 1->4,
-
-
-	for (uint32_t rds = 0; rds < RDS_MAX + 1; rds++)
-		for (int8_t sign_bit = 0; sign_bit < NUM_SIGNS; sign_bit++)
-			for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
-				frequency[rds][sign_bit][state] = 0.0;
-
-	for (uint32_t i = 0;  i < RDS_MAX + 1; i++)
+	double sum = 0.0;
+	for (size_t i = 0; i < state_stats.prob.size(); i++)
 	{
-		double sum = 0.0;
-		for (uint32_t j = 0; j < NUM_OF_SUPER_STATES; j++)
-		{
-			sum += p[(i) * NUM_OF_SUPER_STATES + j];
-		}
-		rds_stats.probability[i] = (i == 0) ? sum : sum / 2.0;
+		sum += state_stats.prob[i];
+	}
+	return (sum - 1 < 1e-14);
+}
+
+template<typename T>
+void normalise_vector(T & v)
+{
+	double sum = 0;
+	for (size_t i = 0; i < v.size(); i++)
+	{
+		sum += v[i];
 	}
 
-	std::vector<uint32_t> rds_values(RDS_MAX + 1);
-
-	for (uint32_t rds = 0; rds < rds_values.size(); rds++)
-		rds_values[rds] = rds;
-
-
-	
-
-
-	// update frequency tables
-
- 	for (uint32_t rds = 0; rds <= RDS_MAX; rds+=2)
+	if (sum != 0)
 	{
-		for (uint32_t state8 = 0 ; state8 < NUM_OF_STATE_NTZ_COMBINATIONS; state8++)
+		for (size_t i = 0; i < v.size(); i++)
 		{
-			for (uint32_t sign_bit = 0 ; sign_bit < NUM_SIGNS; sign_bit++)
+			v[i] /= sum;
+		}
+	}
+}
+
+void TransitionTable::calculate_independent_probabilities()
+{
+	sign_bit_stats.clear();
+	rds_stats.clear();
+	efmplus_state_stats.clear();
+
+	// calculate probability of rds={0,...,RDS_MAX), state8={0, ...8}, sign = {-1,1}
+	for (uint32_t rds = 0; rds < RDS_MAX + 1; rds += 2)
+	{
+		for (uint32_t state8 = 0; state8 < NUM_OF_STATE_NTZ_COMBINATIONS; state8++)
+		{
+			double prob_sum = 0;
+			double var_sum = 0;
+			for (uint32_t sign_bit = 0; sign_bit < NUM_SIGNS; sign_bit++)
 			{
-				int8_t sign = BIT_TO_SIGN(sign_bit);
-				EfmplusState efmplus_state = new2old[state8].state;
 				uint32_t state = super_state_with_rds(rds, state8, sign_bit);
-				frequency[rds][sign_bit][efmplus_state] += p[state];
-			
-				double local_sum = 0.0;
+				auto & probability = state_stats.prob;
+				prob_sum += probability[state];
+				sign_bit_stats.prob[sign_bit] += probability[state];
 
-				for (uint16_t input = 0; input < NUM_INDICES; input++)
-				{
-					SUPER_STATE st(INVALID_SEQUENCE);
-					st.rds = rds;
-					st.ntz = new2old[state8].ntz;
-					st.state = efmplus_state;
-					st.sign = sign;
-
-					SUPER_STATE new_st = choose_next_super_state(input, st, switch_cnt);
-					index_stats.variance[input][state] = new_st.sum_var_actual;
-					local_sum += new_st.sum_var_actual;
-					//fprintf(stderr, "rds=%u, state8=%u, sign=%d, input=%u, new_sum_var=%u, min_rds=%d, next_state=%u local_sum %d, codeword 0x%04x\n",
-						//	rds, state8, sign, input, new_st.sum_var_actual, new_st.rds, new_st.state, local_sum, new_st.codeword);
-				}
-				global_full_state_stats->variance[state] = local_sum * global_full_state_stats->probability[state];
-				//fprintf(stderr, "local_sum = %lf\n", local_sum);
-				state_stats.variance[efmplus_state] += local_sum * p[state];
-				sign_stats.variance[sign_bit] += local_sum * p[state];
-				state_sign_stats.variance[efmplus_state][sign_bit] += local_sum * p[state];
+				var_sum += state_stats.var[state] * probability[state];
+				sign_bit_stats.var[sign_bit] += state_stats.var[state] * probability[state];
 			}
+			auto efmplus_state = new2old[state8].state;
+			efmplus_state_stats.prob[efmplus_state] += prob_sum;
+			efmplus_state_stats.var[efmplus_state] += var_sum;
+			rds_stats.prob[rds] += prob_sum;
+			rds_stats.var[rds] += var_sum;
 		}
 	}
 
- 	normalise_variance(state_stats);
- 	normalise_variance(sign_stats);
- 	//normalise_variance(state_sign_stats);
- 	normalise_variance(*global_full_state_stats.get());
+	normalise_vector(rds_stats.prob);
+	normalise_vector(efmplus_state_stats.prob);
+	normalise_vector(sign_bit_stats.prob);
 
-	for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
+	double sum = 0;
+	for (uint32_t i = 0; i < efmplus_state_stats.prob.size(); i++)
 	{
-		double sum = 0.0;
-		for (uint32_t rds = 0; rds < RDS_MAX + 1; rds++)
-		{
-			for (int8_t sign = 0; sign < NUM_SIGNS; sign++)
-			{
-				sum += frequency[rds][sign][state];
-			}
-		}
-		state_stats.probability[state] = sum;
+		sum += efmplus_state_stats.var[i];
+		fprintf(stderr, "!!!!state %d, prob %lf, var %lf\n", i, efmplus_state_stats.prob[i], efmplus_state_stats.var[i]);
 	}
+	fprintf(stderr, "estimated variance from efmplus_state %lf\n", sum);
 
-	for (int8_t sign = 0; sign < NUM_SIGNS; sign++)
+	sum = 0;
+	for (uint32_t i = 0; i < rds_stats.prob.size(); i++)
 	{
-		double sum = 0.0;
-		for (auto state = 0; state < NUM_EFMPLUS_STATES; state++)
-		{
-			for (uint32_t rds = 0; rds < RDS_MAX + 1; rds++)
-			{
-				sum+=frequency[rds][sign][state];
-			}
-		}
-		sign_stats.probability[sign]=sum;
+		sum += rds_stats.var[i];
+		//fprintf(stderr, "!!!!state %d, prob %lf, var %lf\n", i, rds_stats.prob[i], rds_stats.var[i]);
 	}
+	fprintf(stderr, "estimated variance from rds %lf\n", sum);
 
-	for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
+	sum = 0;
+	for (uint32_t i = 0; i < sign_bit_stats.prob.size(); i++)
 	{
-		for (int8_t sign = 0; sign < NUM_SIGNS; sign++)
-		{
-			double sum = 0.0;
-			for (uint32_t rds = 0; rds <= RDS_MAX; rds++) {
-				sum+=frequency[rds][sign][state];
-			}
-			state_sign_stats.probability[state][sign] =sum;
-		}
+		sum += sign_bit_stats.var[i];
+		fprintf(stderr, "!!!!state %d, prob %lf, var %lf\n", i, sign_bit_stats.prob[i], sign_bit_stats.var[i]);
 	}
+	fprintf(stderr, "estimated variance from sign %lf\n", sum);
 
-
-	double sum = get_total_codebook_variance(state_stats);
-	fprintf(stderr, "VARIANCE ESTIMATION (from states) %f\n",sum);
-
-	sum = get_total_codebook_variance(sign_stats);
-	fprintf(stderr, "VARIANCE ESTIMATION (from sign) %f\n",sum);
-
-	sum=0.0;
-	for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
-	{
-		for (int8_t sign = 0; sign < NUM_SIGNS; sign++)
-		{
-			sum += state_sign_stats.variance[state][sign] * state_sign_stats.probability[state][sign];
-		}
-	}
-
-	fprintf(stderr, "VARIANCE ESTIMATION (from state/sign) %f\n",sum);
-
-	sum = get_total_codebook_variance(*global_full_state_stats.get());
-
-	fprintf(stderr, "VARIANCE ESTIMATION (from full state) %f\n",sum);
-
-	for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
-	{
-		if (state_stats.probability[state] != 0.0)
-			state_stats.variance[state] /= state_stats.probability[state];
-		fprintf(stderr, "State = %2d prob = %f variance = %f\n", state, state_stats.probability[state], state_stats.variance[state]);
-	}
-
-	for (int8_t sign = 0; sign < NUM_SIGNS; sign++)
-	{
-		if (sign_stats.probability[sign] != 0.0)
-			sign_stats.variance[sign] /= sign_stats.probability[sign];
-		fprintf(stderr, "Sign  = %2d prob = %f variance = %f\n", 1-2*sign, sign_stats.probability[sign], sign_stats.variance[sign]);
-	}
-
-	for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
-	{
-		for (int8_t sign = 0; sign < NUM_SIGNS; sign++)
-		{
-			if (state_sign_stats.probability[state][sign] != 0.0)
-				state_sign_stats.variance[state][sign] /= state_sign_stats.probability[state][sign];
-			fprintf(stderr, "State,sign = (%2d,%2d) prob = %f variance = %f\n",state+1, 1-2*sign, state_sign_stats.probability[state][sign],state_sign_stats.variance[state][sign]);
-		}
-	}
-
-	return sum;
+	variance = sum;
 }
 
-//--------------------------------------------------------------------------
-
-double get_total_codebook_variance(const STATS<double> & stats)
+void TransitionTable::solve(double eps)
 {
-	return std::accumulate(stats.variance.begin(), stats.variance.end(), 0.0);
-}
+	fprintf(stderr, "solve\n");
 
-//--------------------------------------------------------------------------
-
-void normalise_variance(STATS<double> & stats)
-{
-	for (auto & var : stats.variance)
+	for (uint32_t i = 0; i < p.size(); i++)
 	{
-		var /=  double(NUM_INDICES * SIZE_OF_ENCODED_OUTPUT_IN_BITS);
+		p[i] = state_stats.prob[i];
 	}
+
+	double sum, sum2, temp, dist;
+	auto & ptr1 = p;
+	auto & ptr2 = state_stats.prob;
+
+	dist = sum2 = 1.0;
+	for (uint32_t iter = 100; dist / sum2 >= eps && iter > 0; iter--)
+	{
+		ptr2 = matrix * ptr1;
+		sum = 0.0;
+		for (size_t i = 0; i < state_stats.prob.size(); i += 2 * NUM_OF_SUPER_STATES)
+		{
+			for (uint32_t j = i; j < i + NUM_OF_SUPER_STATES; j++)
+				sum += ptr2[j];
+		}
+		sum2 = 0.0;
+		dist = 0.0;
+		for (size_t i = 0; i < state_stats.prob.size(); i += 2 * NUM_OF_SUPER_STATES)
+		{
+			for (uint32_t j = i; j < i + NUM_OF_SUPER_STATES; j++)
+			{
+				ptr2[j] /= sum;
+				sum2 += ptr2[j] * ptr2[j];
+				temp = ptr2[j] - ptr1[j];
+				dist += temp*temp;
+			}
+		}
+		std::swap(ptr1, ptr2);
+	}
+	ptr1 = ptr2;
+
+	if (!sanity_check())
+		fprintf(stderr, "error in sanity check\n");
+
+	calculate_independent_probabilities();
 }
 
-//--------------------------------------------------------------------------
