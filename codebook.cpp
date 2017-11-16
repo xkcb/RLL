@@ -13,9 +13,6 @@ Codebook::Codebook(CodebookArray &codebook,
      codeword_map(codeword_map_)
 {
 	is_valid();
-
-	for (auto &elem : transition)
-		std::fill(elem.begin(), elem.end(), 0);
 }
 
 //--------------------------------------------------------------------------
