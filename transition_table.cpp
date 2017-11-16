@@ -396,7 +396,7 @@ void TransitionTable::solve(double eps)
 		}
 		std::swap(ptr1, ptr2);
 	}
-	ptr1 = ptr2;
+    ptr1 = ptr2;
 
 	if (!sanity_check())
 		fprintf(stderr, "error in sanity check\n");

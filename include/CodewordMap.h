@@ -22,7 +22,7 @@ struct SequenceDetails
 	uint32_t sum_of_nrzi_squares  = 0;
 	int32_t  sum_per_bit_rds      = 0;
 
-	SequenceDetails() = default;
+    SequenceDetails() = default;
 	SequenceDetails(int rll_sequence);
 };
 

@@ -64,7 +64,7 @@ using CodebookArray = CodebookState[CDB_LINES][NUM_EFMPLUS_STATES];
 template <size_t N>
 struct Stats
 {
-	blaze::StaticVector<double, N, blaze::columnVector> prob;
+    blaze::StaticVector<double, N, blaze::columnVector> prob;
 	blaze::StaticVector<double, N, blaze::columnVector> var;
 	void clear() { reset(prob); reset(var); }
 };
