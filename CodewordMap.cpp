@@ -1,24 +1,25 @@
 // CodewordMap.cpp
 
 #include "CodewordMap.h"
-
+#include <bitset>
 
 //--------------------------------------------------------------------------
 
 static int get_ntz(int number, int number_length);
 static int get_nlz(int number, int number_length);
 static void get_rds_and_bit_var(int number, int number_length, int & rds, uint32_t & bit_var, int32_t & sum_per_bit_rds);
-static int get_num_of_ones(int number, int number_length);
 
 
 //--------------------------------------------------------------------------
+const uint32_t SequenceDetails::length = CodewordMap::rll_sequence_length;
 
-SequenceDetails::SequenceDetails(int rll_sequence, int length)
+SequenceDetails::SequenceDetails(int rll_sequence)
 {
-	trailing = get_ntz(rll_sequence, length);
-	leading = get_nlz(rll_sequence, length);
-	has_odd_num_of_ones = get_num_of_ones(rll_sequence, length) & 1;
-	get_rds_and_bit_var(rll_sequence, length, rds, sum_of_nrzi_squares, sum_per_bit_rds);
+	std::bitset<SequenceDetails::length> rll(rll_sequence);
+	trailing = get_ntz(rll_sequence, SequenceDetails::length);
+	leading = get_nlz(rll_sequence, SequenceDetails::length);
+	has_odd_num_of_ones = rll.count() & 1;
+	get_rds_and_bit_var(rll_sequence, SequenceDetails::length, rds, sum_of_nrzi_squares, sum_per_bit_rds);
 	//fprintf(stderr, "sequence details: rds: %d, sum_var %u, sum %d\n", rds, sum_of_nrzi_squares, sum_per_bit_rds);
 }
 
@@ -32,10 +33,9 @@ CodewordMap::CodewordMap()
 
 //--------------------------------------------------------------------------
 
-CodewordMap::CodewordMap(int min_constraint_d_, int max_constraint_k_, int rll_sequence_length_)
+CodewordMap::CodewordMap(int min_constraint_d_, int max_constraint_k_)
 : min_constraint_d(min_constraint_d_),
-  max_constraint_k(max_constraint_k_),
-  rll_sequence_length(rll_sequence_length_)
+  max_constraint_k(max_constraint_k_)
 {
 
 }
@@ -70,24 +70,11 @@ SequenceDetails & CodewordMap::operator[](std::size_t idx)
 
 //--------------------------------------------------------------------------
 
-static void get_as_binary(char * buffer, int number, int number_length)
-{
-	for (int i = 0; i < number_length; i++)
-	{
-		int mask = 1 << (number_length - 1 - i);
-		sprintf(&buffer[i], "%c", mask & number ? '1' : '0');
-		mask >>= 1;
-	}
-}
-
-//--------------------------------------------------------------------------
-
 void CodewordMap::print_codes()
 {
 	FILE * file;
-	char buffer[33];
 
-	file = fopen("codes.txt", "w");
+	fopen_s(&file, "codes.txt", "w");
 	if (!file)
 	{
 		fprintf(stderr, "could not open file codes.txt for write");
@@ -103,11 +90,10 @@ void CodewordMap::print_codes()
 
 		for (const auto & code : *list)
 		{
+			std::bitset<rll_sequence_length> codeword(code);
 			fprintf(file, "0x%04x \t", code);
 
-			get_as_binary(buffer, code, rll_sequence_length);
-
-			fprintf(file, "%s ", buffer);
+			fprintf(file, "%s ", codeword.to_string().c_str());
 
 			fprintf(file, " %2d %2d rds: %2d, sum_var %d\n", codeword_map[code].leading, codeword_map[code].trailing, codeword_map[code].rds, codeword_map[code].sum_of_nrzi_squares);
 		}
@@ -127,7 +113,7 @@ void CodewordMap::create_codeword_map()
 		std::list<int> * list = rll_list[number_of_ones - Amin];
 		for (const auto & val : *list)
 		{
-			codeword_map[val] = SequenceDetails{val, rll_sequence_length};
+			codeword_map[val] = SequenceDetails{val};
 		}
 	}
 	codeword_map[INVALID_SEQUENCE] = SequenceDetails{};
@@ -306,21 +292,6 @@ static void get_rds_and_bit_var(int number, int number_length, int & rds, uint32
 		sum_per_bit_rds += rds;
 		bit_var += rds * rds;
 	}
-}
-
-//--------------------------------------------------------------------------
-
-static int get_num_of_ones(int number, int number_length)
-{
-	int number_of_ones = 0;
-
-	for (int i = 0; i < number_length; i++)
-	{
-		if (number & 1)
-			number_of_ones++;
-		number >>= 1;
-	}
-	return number_of_ones;
 }
 
 //--------------------------------------------------------------------------

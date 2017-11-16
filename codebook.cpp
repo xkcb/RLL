@@ -98,7 +98,7 @@ void Codebook::print_codebook_as_header(const char * name, int flag) const
 {
 	FILE * file;
 
-	file = fopen(name, "w");
+	fopen_s(&file, name, "w");
 	if (!file)
 		return;
 
