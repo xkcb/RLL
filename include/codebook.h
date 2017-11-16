@@ -9,7 +9,6 @@
 #include <iostream>
 #include <memory>
 #include <vector>
-#include <numeric>
 
 #include "CodewordMap.h"
 #include "constants.h"
@@ -22,7 +21,7 @@ class Exception : public std::exception
 public:
 	explicit Exception(const char * message)
 	{
-		std::strncpy(msg_, message, 1024);
+		strncpy_s(msg_, message, 1024);
 	}
 
 	virtual ~Exception() throw (){}
@@ -49,44 +48,6 @@ struct SUPER_STATE
 	SUPER_STATE(uint16_t codeword) : codeword(codeword)
 	{
 
-	}
-} ;
-
-template<typename T>
-struct STATS
-{
-	std::vector<T> probability;
-	std::vector<T> variance;
-
-	STATS (int size)
-		: probability (size, 0.0),
-		  variance (size, 0.0)
-	{
-
-	}
-
-	STATS(int size1, int size2)
-	{
-		std::vector<double> v1(size2, 0.0);
-		std::vector<std::vector<double> > probability1 (size1, v1);
-
-		std::vector<double> v2(size2, 0.0);
-		std::vector<std::vector<double> >variance1 (size1, v2);
-		probability = probability1;
-		variance = variance1;
-
-	}
-} ;
-
-struct STATS_2D
-{
-	std::vector<std::vector<double> > probability;
-	std::vector<std::vector<double> > variance;
-
-	STATS_2D(int size1, int size2)
-		: probability(size1, std::vector<double>(size2, 0.0)),
-		  variance(size1, std::vector<double>(size2, 0.0))
-	{
 	}
 } ;
 

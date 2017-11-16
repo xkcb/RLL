@@ -14,6 +14,7 @@ const int MAX_ONES_IN_A_SEQUENCE = 32; // as much as an integer can hold
 
 struct SequenceDetails
 {
+	static const uint32_t length;
 	uint32_t leading              = 0;
 	uint32_t trailing             = 0;
 	int32_t  rds                  = INVALID_RDS; //running digital sum at the end of the sequence
@@ -22,7 +23,7 @@ struct SequenceDetails
 	int32_t  sum_per_bit_rds      = 0;
 
 	SequenceDetails() = default;
-	SequenceDetails(int rll_sequence, int length);
+	SequenceDetails(int rll_sequence);
 };
 
 typedef std::map<unsigned int, SequenceDetails> CODEWORD_MAP;
@@ -30,7 +31,9 @@ typedef std::map<unsigned int, SequenceDetails> CODEWORD_MAP;
 class CodewordMap
 {
 public:
-	CodewordMap(int d, int k, int N);
+	static const uint32_t rll_sequence_length = SIZE_OF_ENCODED_OUTPUT_IN_BITS; // rll sequence's length that satisfies the (d,k) constraint
+
+	CodewordMap(int d, int k);
 	CodewordMap();
 	~CodewordMap();
 	void print_codes();
@@ -48,7 +51,6 @@ private:
 
 	int min_constraint_d    = 2;
 	int max_constraint_k 	= 10;
-	int rll_sequence_length = SIZE_OF_ENCODED_OUTPUT_IN_BITS; // rll sequence's length that satisfies the (d,k) constraint
 	int Amax 				= (rll_sequence_length + min_constraint_d) / (min_constraint_d + 1); //maximum number of '1's that a sequence may have
 	int Amin 				= min_constraint_d / (max_constraint_k + 1); // minimum number of '1's that a sequence may have
 	int rll_sequences_found = 0;
