@@ -122,38 +122,38 @@ bool Codebook::improve_cdb(std::bitset<4>strategy, std::array<uint32_t, 2> & ind
 
 bool Codebook::can_be_applied(size_t strategy_, uint32_t index) const
 {
-	std::bitset<4> strategy(strategy_);
+    std::bitset<4> strategy(strategy_);
 
-	for (auto state = 0; state < NUM_EFMPLUS_STATES; state++)
-	{
-		if (strategy[(NUM_EFMPLUS_STATES - 1) - state]) // strategy includes state
-		{
-			auto next_state = line[index][state].next_state;
-			if (next_state != NO_STATE)
-			{
-				for (auto state2 = 0; state2 < NUM_EFMPLUS_STATES; state2++)
-				{
-					if ((!strategy[(NUM_EFMPLUS_STATES - 1) - state2]) && line[index][state2].next_state == next_state)
-						return false;
-				}
-			}
-		}
-	}
-	return true;
+    for (auto state = 0; state < NUM_EFMPLUS_STATES; state++)
+    {
+        if (strategy[(NUM_EFMPLUS_STATES - 1) - state]) // strategy includes state
+        {
+            auto next_state = line[index][state].next_state;
+            if (next_state != NO_STATE)
+            {
+                for (auto state2 = 0; state2 < NUM_EFMPLUS_STATES; state2++)
+                {
+                    if ((!strategy[(NUM_EFMPLUS_STATES - 1) - state2]) && line[index][state2].next_state == next_state)
+                        return false;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 std::bitset<16> Codebook::valid_strategies_for_index(uint32_t index) const
 {
-	std::bitset<16> valid_strategies(0);
+    std::bitset<16> valid_strategies(0);
 
-	for (size_t strategy = 1; strategy <= 15; strategy++)
-	{
-		if (can_be_applied(strategy, index))
-		{
-			valid_strategies.set(strategy);
-		}
-	}
-	return valid_strategies;
+    for (size_t strategy = 1; strategy <= 15; strategy++)
+    {
+        if (can_be_applied(strategy, index))
+        {
+            valid_strategies.set(strategy);
+        }
+    }
+    return valid_strategies;
 }
 
 std::array<std::bitset<16>, CDB_LINES> Codebook::calculate_valid_strategies()
