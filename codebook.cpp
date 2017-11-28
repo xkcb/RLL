@@ -46,6 +46,25 @@ bool Codebook::states_have_valid_codeword() const
 
 //--------------------------------------------------------------------------
 
+bool Codebook::states_have_valid_codeword(const std::array<uint32_t, 2> & indices) const
+{
+    for (auto & i : indices)
+    {
+        for (uint32_t state = 0; state < NUM_EFMPLUS_STATES; state++)
+        {
+            uint16_t code1 = line[i][state].codeword;
+            uint16_t code2 = line[(i + NUM_INDICES) % NUM_INDICES][state].codeword;
+            if (code1 == INVALID_SEQUENCE && code2 == INVALID_SEQUENCE)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+//--------------------------------------------------------------------------
+
 //codewords with the same next state should be in the same line
 bool Codebook::is_consistent() const
 {
